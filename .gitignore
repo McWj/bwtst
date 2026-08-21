@@ -35,3 +35,4 @@ backend/out/
 .cache/
 .temp/
 .tmp/
+.tmp_check/
