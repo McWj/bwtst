@@ -1,0 +1,37 @@
+# ===== 依赖 / 构建产物 =====
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# ===== 工具链（JDK / Android SDK 等大文件） =====
+.tooling/
+
+# ===== 二进制 / 安装包 =====
+*.apk
+*.aar
+*.jar
+*.exe
+*.dll
+*.so
+*.dylib
+
+# ===== 日志 =====
+*.log
+*.err.log
+
+# ===== 编译产物（后端） =====
+backend/target/
+backend/out/
+*.class
+
+# ===== 编辑器 / 系统 =====
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# ===== 缓存 =====
+.cache/
+.temp/
+.tmp/

@@ -1,0 +1,13 @@
+{
+  "header": {
+    "requisitionDate": "2026-08-17",
+    "demandDate": "2026-08-17",
+    "siteId": 941,
+    "creator": "codebuddy_test",
+    "isAddPo": "N",
+    "isUrgentOrder": "N"
+  },
+  "details": [
+    { "itemId": 370, "qty": 10, "unit": "", "price": 5.5 }
+  ]
+}

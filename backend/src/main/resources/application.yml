@@ -1,0 +1,39 @@
+# add by codebuddy 20260817
+server:
+  # 8080 被本机 Oracle TNSLSNR 占用，改用 8081
+  port: 8081
+
+spring:
+  application:
+    name: bwtst-backend
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://localhost:3306/bwtst?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true&createDatabaseIfNotExist=true
+    username: wjdev
+    password: wjdev
+  #mark by codebuddy 20260817: 表已由用户建好，不再自动建表
+  # sql:
+  #   init:
+  #     mode: always
+  #     encoding: utf-8
+  #     schema-locations: classpath:schema.sql
+  #     data-locations: classpath:data.sql
+  #     continue-on-error: false
+
+# add by codebuddy 20260817: ERP 接口地址（与前端调用一致）
+bwtst:
+  erp:
+    url: http://106.14.92.92/wtoptst/ws/r/awsp920
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  global-config:
+    banner: false
+    db-config:
+      id-type: auto
+
+logging:
+  level:
+    com.bwtst: info
