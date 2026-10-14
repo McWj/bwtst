@@ -2,7 +2,7 @@ import request from './request'
 import type {
   BillDto, DashboardOverview, DeliveryShipment, DeliveryShipmentDetail, Distribution, DistributionCenter,
   DistributionDetail, DistributionReturn, DistributionReturnDetail,
-  Goods, GoodsShop, PageResult, Ptemplate, PtemplateDto, Purchase, PurchaseDetail,
+  Goods, GoodsShop, LoginResult, PageResult, Ptemplate, PtemplateDto, Purchase, PurchaseDetail,
   PurchaseInbound, PurchaseInboundDetail, PurchaseReturn, PurchaseReturnDetail,
   Requisition, RequisitionDetail, Shop, Supplier, SupplierPrice, SysUser, TaskConfig, UnuploadedBill, UnuploadedBillType, ViewType,
   WarehouseReturn, WarehouseReturnDetail
@@ -161,9 +161,11 @@ export const supplierPriceApi = {
 
 // add by codebuddy 20260819: 登录
 export const authApi = {
-  login: (data: { username: string; password: string }) =>
-    request.post<SysUser>('/auth/login', data)
+  // add by codebuddy 20260923: 支持企业编码，返回令牌 + 用户信息
+  login: (data: { username: string; password: string; tenantCode?: string }) =>
+    request.post<LoginResult>('/auth/login', data)
 }
+
 
 // add by codebuddy 20260819: 用户管理
 export const userApi = {

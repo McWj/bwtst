@@ -4,12 +4,17 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.bwtst.common.BusinessException;
-import com.bwtst.common.Md5Util;
+import com.bwtst.common.JwtUtil;
+import com.bwtst.common.LoginResult;
+import com.bwtst.common.PasswordUtil;
+import com.bwtst.common.TenantContext;
+import com.bwtst.entity.SysTenant;
 import com.bwtst.entity.SysUser;
 import com.bwtst.entity.SysUserRole;
 import com.bwtst.entity.SysUserScope;
 import com.bwtst.entity.Shop;
 import com.bwtst.mapper.ShopMapper;
+import com.bwtst.mapper.SysTenantMapper;
 import com.bwtst.mapper.SysUserMapper;
 import com.bwtst.mapper.SysUserRoleMapper;
 import com.bwtst.mapper.SysUserScopeMapper;
@@ -31,6 +36,9 @@ public class UserService {
     private final SysUserRoleMapper roleMapper;
     private final SysUserScopeMapper scopeMapper;
     private final ShopMapper shopMapper;
+    // add by codebuddy 20260923: SaaS 登录令牌与租户
+    private final JwtUtil jwtUtil;
+    private final SysTenantMapper tenantMapper;
 
     public IPage<SysUser> page(int page, int size, String keyword) {
         LambdaQueryWrapper<SysUser> w = new LambdaQueryWrapper<>();
@@ -91,7 +99,7 @@ public class UserService {
             if (!StringUtils.hasText(u.getPassword())) {
                 throw new BusinessException("新增用户必须设置密码");
             }
-            u.setPassword(Md5Util.md5(u.getPassword()));
+            u.setPassword(PasswordUtil.hash(u.getPassword()));
             if (!StringUtils.hasText(u.getStatus())) {
                 u.setStatus("1");
             }
@@ -165,28 +173,98 @@ public class UserService {
         if (u == null) {
             throw new BusinessException("用户不存在");
         }
-        u.setPassword(Md5Util.md5(newPassword));
+        u.setPassword(PasswordUtil.hash(newPassword));
         userMapper.updateById(u);
     }
 
-    public SysUser login(String username, String password) {
+    /**
+     * 登录。
+     * add by codebuddy 20260923: 改为多租户——先按企业编码定位租户，再在租户上下文内校验账号，成功后签发令牌
+     */
+    public LoginResult login(String username, String password, String tenantCode) {
+        // add by codebuddy 20261014: 业务系统登录必须指定企业编码；
+        // 平台管理端登录（4 参重载）允许留空并回落默认租户
+        if (!StringUtils.hasText(tenantCode)) {
+            throw new BusinessException("请输入企业编码");
+        }
+        return login(username, password, tenantCode, false);
+    }
+
+    /**
+     * 登录。
+     * add by codebuddy 20260923: requirePlatformAdmin=true 时仅允许平台超级管理员登录（平台管理端专用入口）
+     */
+    public LoginResult login(String username, String password, String tenantCode, boolean requirePlatformAdmin) {
         if (!StringUtils.hasText(username) || !StringUtils.hasText(password)) {
             throw new BusinessException("请输入登录账户和密码");
         }
-        SysUser u = userMapper.selectOne(
-                new LambdaQueryWrapper<SysUser>().eq(SysUser::getUsername, username));
-        if (u == null) {
-            throw new BusinessException("账户或密码错误");
+        long tenantId = resolveTenantId(tenantCode);
+        TenantContext.set(tenantId, null, null);
+        try {
+            SysUser u = userMapper.selectOne(
+                    new LambdaQueryWrapper<SysUser>().eq(SysUser::getUsername, username));
+            if (u == null) {
+                throw new BusinessException("账户或密码错误");
+            }
+            if (!"1".equals(u.getStatus())) {
+                throw new BusinessException("账户已停用");
+            }
+            if (!PasswordUtil.matches(password, u.getPassword())) {
+                throw new BusinessException("账户或密码错误");
+            }
+            // add by codebuddy 20260923: 历史 MD5 密码校验通过后自动升级为 PBKDF2，用户无感知
+            if (PasswordUtil.needsUpgrade(u.getPassword())) {
+                SysUser upgrade = new SysUser();
+                upgrade.setId(u.getId());
+                upgrade.setPassword(PasswordUtil.hash(password));
+                userMapper.updateById(upgrade);
+            }
+            fillRelation(u);
+            u.setPassword(null);
+            boolean platformAdmin = "1".equals(u.getIsPlatformAdmin());
+            // 平台管理端入口仅放行平台超管；校验放在密码校验之后，避免暴露账号是否存在
+            if (requirePlatformAdmin && !platformAdmin) {
+                throw new BusinessException("该账号无平台管理权限");
+            }
+            String token = jwtUtil.createToken(tenantId, u.getId(), u.getUsername(), platformAdmin);
+            return new LoginResult(token, u, jwtUtil.getExpireMinutes());
+        } finally {
+            TenantContext.clear();
         }
-        if (!"1".equals(u.getStatus())) {
-            throw new BusinessException("账户已停用");
+    }
+
+    /**
+     * 解析登录企业编码。
+     * add by codebuddy 20260923: 未填写时，系统只有一个启用租户则自动使用，否则要求填写，兼容现有单租户登录习惯
+     */
+    private long resolveTenantId(String tenantCode) {
+        if (StringUtils.hasText(tenantCode)) {
+            SysTenant t = tenantMapper.selectOne(
+                    new LambdaQueryWrapper<SysTenant>().eq(SysTenant::getTenantCode, tenantCode.trim()));
+            if (t == null) {
+                throw new BusinessException("企业编码不存在");
+            }
+            if (!"1".equals(t.getStatus())) {
+                throw new BusinessException("该企业已停用");
+            }
+            return t.getId();
         }
-        if (!Md5Util.md5(password).equals(u.getPassword())) {
-            throw new BusinessException("账户或密码错误");
+        // add by codebuddy 20260923: 未填写企业编码时回落到默认租户，兼容原有单租户登录习惯
+        long defaultId = TenantContext.getDefaultTenantId();
+        SysTenant def = tenantMapper.selectById(defaultId);
+        if (def == null) {
+            // 默认租户不存在（如已被清理）时，仅有一个启用租户则直接使用
+            List<SysTenant> enabled = tenantMapper.selectList(
+                    new LambdaQueryWrapper<SysTenant>().eq(SysTenant::getStatus, "1"));
+            if (enabled != null && enabled.size() == 1) {
+                return enabled.get(0).getId();
+            }
+            throw new BusinessException("请填写企业编码");
         }
-        fillRelation(u);
-        u.setPassword(null);
-        return u;
+        if (!"1".equals(def.getStatus())) {
+            throw new BusinessException("默认企业已停用，请填写企业编码");
+        }
+        return def.getId();
     }
 
     private boolean isValidRole(String role) {
@@ -216,7 +294,7 @@ public class UserService {
             SysUser u = new SysUser();
             u.setUsername(username);
             u.setRealName(shop.getShopName());
-            u.setPassword(Md5Util.md5(username));
+            u.setPassword(PasswordUtil.hash(username));
             u.setStatus("1");
             userMapper.insert(u);
             Integer userId = u.getId();

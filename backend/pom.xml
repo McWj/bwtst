@@ -16,7 +16,7 @@
     <artifactId>bwtst-backend</artifactId>
     <version>1.0.0</version>
     <name>bwtst-backend</name>
-    <description>要货测试工作台后端</description>
+    <description>测试中台后端</description>
 
     <properties>
         <java.version>17</java.version>

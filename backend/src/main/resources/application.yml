@@ -8,9 +8,10 @@ spring:
     name: bwtst-backend
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://localhost:3306/bwtst?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true&createDatabaseIfNotExist=true
-    username: wjdev
-    password: wjdev
+    # add by codebuddy 20260824: 支持容器化，默认 localhost，Docker 下用环境变量覆盖
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:bwtst}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true&createDatabaseIfNotExist=true
+    username: ${DB_USER:wjdev}
+    password: ${DB_PASSWORD:wjdev}
   #mark by codebuddy 20260817: 表已由用户建好，不再自动建表
   # sql:
   #   init:
@@ -22,8 +23,22 @@ spring:
 
 # add by codebuddy 20260817: ERP 接口地址（与前端调用一致）
 bwtst:
+  # add by codebuddy 20260923: ERP 全局默认账套；租户在「租户管理」中单独配置后优先使用租户配置
   erp:
     url: http://106.14.92.92/wtoptst/ws/r/awsp920
+    digi-key: 85d966d2f533fca68f83da455edabcbe
+    prod: BWZT
+    acct: tiptop
+    ent-id: "10"
+  # add by codebuddy 20260923: SaaS 多租户配置
+  tenant:
+    # 无登录上下文（定时任务、启动初始化）时的兜底租户
+    default-id: 1
+  jwt:
+    # 生产环境务必替换为足够随机的密钥
+    secret: bwtst-saas-2026-please-change-this-secret
+    # 令牌有效期（分钟），默认 12 小时
+    expire-minutes: 720
 
 mybatis-plus:
   configuration:

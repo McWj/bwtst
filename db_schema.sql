@@ -370,9 +370,10 @@ CREATE TABLE `sys_config` (
 CREATE TABLE `sys_user` (
   `id` INT(10) NOT NULL AUTO_INCREMENT,
   `username` VARCHAR(64) NOT NULL,
-  `password` VARCHAR(64) NOT NULL,
+  `password` VARCHAR(200) NOT NULL,
   `real_name` VARCHAR(64),
   `status` VARCHAR(1) DEFAULT 1,
+  `is_platform_admin` VARCHAR(1) NOT NULL DEFAULT '0',
   PRIMARY KEY (`id`),
   UNIQUE KEY `username` (`username`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='';
@@ -427,4 +428,81 @@ CREATE TABLE `warehouse_return_detail` (
   `amount` DECIMAL(18,4),
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='';
+
+-- ============================================================
+-- add by codebuddy 20260923: SaaS 多租户改造（仅用于全新数据库的一次性初始化）
+-- 说明：已运行的环境由后端 DbSchemaInitializer 在启动时自动幂等补齐，请勿在已升级的库上重复执行本段。
+-- ============================================================
+
+-- 1. 租户（企业）表：每个租户一套独立 ERP 账套凭证
+CREATE TABLE IF NOT EXISTS `sys_tenant` (
+  `id` BIGINT NOT NULL AUTO_INCREMENT,
+  `tenant_code` VARCHAR(64) NOT NULL COMMENT '企业编码（登录时使用）',
+  `tenant_name` VARCHAR(200) NOT NULL COMMENT '企业名称',
+  `status` VARCHAR(1) NOT NULL DEFAULT '1' COMMENT '状态：1-启用 0-停用',
+  `erp_url` VARCHAR(255) DEFAULT NULL COMMENT 'ERP 接口地址',
+  `erp_digi_key` VARCHAR(128) DEFAULT NULL COMMENT 'ERP 数字签名密钥',
+  `erp_prod` VARCHAR(64) DEFAULT NULL COMMENT 'ERP 产品码',
+  `erp_acct` VARCHAR(64) DEFAULT NULL COMMENT 'ERP 账号',
+  `erp_ent_id` VARCHAR(32) DEFAULT NULL COMMENT 'ERP 企业账套 ID',
+  `create_datetime` DATETIME DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_tenant_code` (`tenant_code`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='SaaS 租户（企业）';
+
+-- 2. 预置默认租户（存量数据统一归入 id=1）
+INSERT INTO `sys_tenant` (`id`, `tenant_code`, `tenant_name`, `status`, `create_datetime`)
+SELECT 1, 'bwcs', '广东横琴源麦商秋供应链管理有限公司', '1', NOW()
+FROM DUAL WHERE NOT EXISTS (SELECT 1 FROM `sys_tenant` WHERE `id` = 1);
+
+-- 3. 所有业务表补 tenant_id 列与索引
+ALTER TABLE `delivery_shipment`           ADD COLUMN `tenant_id` BIGINT NOT NULL DEFAULT 1, ADD KEY `idx_delivery_shipment_tenant_id` (`tenant_id`);
+ALTER TABLE `delivery_shipment_detail`    ADD COLUMN `tenant_id` BIGINT NOT NULL DEFAULT 1, ADD KEY `idx_delivery_shipment_detail_tenant_id` (`tenant_id`);
+ALTER TABLE `distribution`                ADD COLUMN `tenant_id` BIGINT NOT NULL DEFAULT 1, ADD KEY `idx_distribution_tenant_id` (`tenant_id`);
+ALTER TABLE `distribution_detail`         ADD COLUMN `tenant_id` BIGINT NOT NULL DEFAULT 1, ADD KEY `idx_distribution_detail_tenant_id` (`tenant_id`);
+ALTER TABLE `distribution_center`         ADD COLUMN `tenant_id` BIGINT NOT NULL DEFAULT 1, ADD KEY `idx_distribution_center_tenant_id` (`tenant_id`);
+ALTER TABLE `distribution_return`         ADD COLUMN `tenant_id` BIGINT NOT NULL DEFAULT 1, ADD KEY `idx_distribution_return_tenant_id` (`tenant_id`);
+ALTER TABLE `distribution_return_detail`  ADD COLUMN `tenant_id` BIGINT NOT NULL DEFAULT 1, ADD KEY `idx_distribution_return_detail_tenant_id` (`tenant_id`);
+ALTER TABLE `goods`                       ADD COLUMN `tenant_id` BIGINT NOT NULL DEFAULT 1, ADD KEY `idx_goods_tenant_id` (`tenant_id`);
+ALTER TABLE `goods_shop`                  ADD COLUMN `tenant_id` BIGINT NOT NULL DEFAULT 1, ADD KEY `idx_goods_shop_tenant_id` (`tenant_id`);
+ALTER TABLE `ptemplate`                   ADD COLUMN `tenant_id` BIGINT NOT NULL DEFAULT 1, ADD KEY `idx_ptemplate_tenant_id` (`tenant_id`);
+ALTER TABLE `ptemplate_goods`             ADD COLUMN `tenant_id` BIGINT NOT NULL DEFAULT 1, ADD KEY `idx_ptemplate_goods_tenant_id` (`tenant_id`);
+ALTER TABLE `ptemplate_shop`              ADD COLUMN `tenant_id` BIGINT NOT NULL DEFAULT 1, ADD KEY `idx_ptemplate_shop_tenant_id` (`tenant_id`);
+ALTER TABLE `purchase`                    ADD COLUMN `tenant_id` BIGINT NOT NULL DEFAULT 1, ADD KEY `idx_purchase_tenant_id` (`tenant_id`);
+ALTER TABLE `purchase_detail`             ADD COLUMN `tenant_id` BIGINT NOT NULL DEFAULT 1, ADD KEY `idx_purchase_detail_tenant_id` (`tenant_id`);
+ALTER TABLE `purchase_inbound`            ADD COLUMN `tenant_id` BIGINT NOT NULL DEFAULT 1, ADD KEY `idx_purchase_inbound_tenant_id` (`tenant_id`);
+ALTER TABLE `purchase_inbound_detail`     ADD COLUMN `tenant_id` BIGINT NOT NULL DEFAULT 1, ADD KEY `idx_purchase_inbound_detail_tenant_id` (`tenant_id`);
+ALTER TABLE `purchase_return`             ADD COLUMN `tenant_id` BIGINT NOT NULL DEFAULT 1, ADD KEY `idx_purchase_return_tenant_id` (`tenant_id`);
+ALTER TABLE `purchase_return_detail`      ADD COLUMN `tenant_id` BIGINT NOT NULL DEFAULT 1, ADD KEY `idx_purchase_return_detail_tenant_id` (`tenant_id`);
+ALTER TABLE `requisition`                 ADD COLUMN `tenant_id` BIGINT NOT NULL DEFAULT 1, ADD KEY `idx_requisition_tenant_id` (`tenant_id`);
+ALTER TABLE `requisition_detail`          ADD COLUMN `tenant_id` BIGINT NOT NULL DEFAULT 1, ADD KEY `idx_requisition_detail_tenant_id` (`tenant_id`);
+ALTER TABLE `shop`                        ADD COLUMN `tenant_id` BIGINT NOT NULL DEFAULT 1, ADD KEY `idx_shop_tenant_id` (`tenant_id`);
+ALTER TABLE `supplier`                    ADD COLUMN `tenant_id` BIGINT NOT NULL DEFAULT 1, ADD KEY `idx_supplier_tenant_id` (`tenant_id`);
+ALTER TABLE `supplier_price`              ADD COLUMN `tenant_id` BIGINT NOT NULL DEFAULT 1, ADD KEY `idx_supplier_price_tenant_id` (`tenant_id`);
+ALTER TABLE `sys_config`                  ADD COLUMN `tenant_id` BIGINT NOT NULL DEFAULT 1, ADD KEY `idx_sys_config_tenant_id` (`tenant_id`);
+ALTER TABLE `sys_user`                    ADD COLUMN `tenant_id` BIGINT NOT NULL DEFAULT 1, ADD KEY `idx_sys_user_tenant_id` (`tenant_id`);
+ALTER TABLE `sys_user_role`               ADD COLUMN `tenant_id` BIGINT NOT NULL DEFAULT 1, ADD KEY `idx_sys_user_role_tenant_id` (`tenant_id`);
+ALTER TABLE `sys_user_scope`              ADD COLUMN `tenant_id` BIGINT NOT NULL DEFAULT 1, ADD KEY `idx_sys_user_scope_tenant_id` (`tenant_id`);
+ALTER TABLE `warehouse_return`            ADD COLUMN `tenant_id` BIGINT NOT NULL DEFAULT 1, ADD KEY `idx_warehouse_return_tenant_id` (`tenant_id`);
+ALTER TABLE `warehouse_return_detail`     ADD COLUMN `tenant_id` BIGINT NOT NULL DEFAULT 1, ADD KEY `idx_warehouse_return_detail_tenant_id` (`tenant_id`);
+
+-- 4. 全局唯一键 → 租户内唯一（不同租户可使用相同业务编码）
+ALTER TABLE `distribution`                DROP INDEX `distribution_index`, ADD UNIQUE KEY `uk_tenant_distribution_no` (`tenant_id`,`distribution_no`);
+ALTER TABLE `distribution_detail`         DROP INDEX `requisition_detail_index`, ADD UNIQUE KEY `uk_tenant_distribution_detail` (`tenant_id`,`distribution_id`,`seq`);
+ALTER TABLE `distribution_return`         DROP INDEX `distribution_return_index`, ADD UNIQUE KEY `uk_tenant_distribution_return_no` (`tenant_id`,`distribution_return_no`);
+ALTER TABLE `distribution_return_detail`  DROP INDEX `distribution_return_detail_index`, ADD UNIQUE KEY `uk_tenant_distribution_return_detail` (`tenant_id`,`distribution_return_id`,`seq`);
+ALTER TABLE `goods`                       DROP INDEX `goods_item_no`, ADD UNIQUE KEY `uk_tenant_goods_item_no` (`tenant_id`,`item_no`);
+ALTER TABLE `goods_shop`                  DROP INDEX `goods_shop_item`, ADD UNIQUE KEY `uk_tenant_goods_shop_item` (`tenant_id`,`shop_id`,`item_id`);
+ALTER TABLE `ptemplate`                   DROP INDEX `ptemplate_no_index`, ADD UNIQUE KEY `uk_tenant_ptemplate_no` (`tenant_id`,`ptemplate_no`);
+ALTER TABLE `ptemplate_goods`             DROP INDEX `ptemplate_goods_index`, ADD UNIQUE KEY `uk_tenant_ptemplate_goods` (`tenant_id`,`ptemplate_id`,`seq`);
+ALTER TABLE `ptemplate_shop`              DROP INDEX `ptemplate_shop_index`, ADD UNIQUE KEY `uk_tenant_ptemplate_shop` (`tenant_id`,`ptemplate_id`,`shop_id`);
+ALTER TABLE `purchase`                    DROP INDEX `requisition_index`, ADD UNIQUE KEY `uk_tenant_purchase_no` (`tenant_id`,`purchase_no`);
+ALTER TABLE `purchase_detail`             DROP INDEX `purchase_detail_index`, ADD UNIQUE KEY `uk_tenant_purchase_detail` (`tenant_id`,`purchase_id`,`seq`);
+ALTER TABLE `purchase_return`             DROP INDEX `purchase_return_index`, ADD UNIQUE KEY `uk_tenant_purchase_return_no` (`tenant_id`,`purchase_return_no`);
+ALTER TABLE `purchase_return_detail`      DROP INDEX `purchase_detail_index`, ADD UNIQUE KEY `uk_tenant_purchase_return_detail` (`tenant_id`,`purchase_return_id`,`seq`);
+ALTER TABLE `requisition`                 DROP INDEX `requisition_index`, ADD UNIQUE KEY `uk_tenant_requisition_no` (`tenant_id`,`requisition_no`,`site_id`);
+ALTER TABLE `requisition_detail`          DROP INDEX `requisition_detail_index`, ADD UNIQUE KEY `uk_tenant_requisition_detail` (`tenant_id`,`requisition_id`,`seq`);
+ALTER TABLE `shop`                        DROP INDEX `shop_no_index`, ADD UNIQUE KEY `uk_tenant_shop_no` (`tenant_id`,`shop_no`);
+ALTER TABLE `supplier`                    DROP INDEX `uk_supplier_code`, ADD UNIQUE KEY `uk_tenant_supplier_code` (`tenant_id`,`supplier_code`);
+ALTER TABLE `sys_user`                    DROP INDEX `username`, ADD UNIQUE KEY `uk_tenant_username` (`tenant_id`,`username`);
 

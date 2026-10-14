@@ -14,6 +14,8 @@ import org.springframework.stereotype.Component;
 public class DbSchemaInitializer implements CommandLineRunner {
 
     private final JdbcTemplate jdbcTemplate;
+    // add by codebuddy 20260923: 多租户结构迁移组件（同包，无需 import）
+    private final TenantSchemaMigrator tenantSchemaMigrator;
 
     @Override
     public void run(String... args) {
@@ -146,22 +148,23 @@ public class DbSchemaInitializer implements CommandLineRunner {
                             ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
             // add by codebuddy 20260817: 预置要货单ERP上传定时任务间隔（分钟），默认 3 分钟
+            // add by codebuddy 20260923: 预置只针对默认租户，避免全局判断导致新租户缺少自己的配置
             Long cfgCnt = jdbcTemplate.queryForObject(
-                    "SELECT COUNT(*) FROM sys_config WHERE config_key = ?",
+                    "SELECT COUNT(*) FROM sys_config WHERE config_key = ? AND tenant_id = 1",
                     Long.class, SysConfigService.KEY_UPLOAD_INTERVAL_MINUTES);
             if (cfgCnt == null || cfgCnt == 0) {
                 jdbcTemplate.update(
-                        "INSERT INTO sys_config (config_key, config_value, remark) VALUES (?, ?, ?)",
+                        "INSERT INTO sys_config (config_key, config_value, remark, tenant_id) VALUES (?, ?, ?, 1)",
                         SysConfigService.KEY_UPLOAD_INTERVAL_MINUTES, "3", "要货单ERP上传定时任务间隔（分钟）");
             }
 
             // add by codebuddy 20260818: 预置定时任务开关，默认停用，避免用户手动关闭后刷新页面又被自动开启
             Long enCnt = jdbcTemplate.queryForObject(
-                    "SELECT COUNT(*) FROM sys_config WHERE config_key = ?",
+                    "SELECT COUNT(*) FROM sys_config WHERE config_key = ? AND tenant_id = 1",
                     Long.class, SysConfigService.KEY_UPLOAD_ENABLED);
             if (enCnt == null || enCnt == 0) {
                 jdbcTemplate.update(
-                        "INSERT INTO sys_config (config_key, config_value, remark) VALUES (?, ?, ?)",
+                        "INSERT INTO sys_config (config_key, config_value, remark, tenant_id) VALUES (?, ?, ?, 1)",
                         SysConfigService.KEY_UPLOAD_ENABLED, "false", "要货单ERP上传定时任务开关（true-启用/false-停用）");
             }
 
@@ -213,18 +216,22 @@ public class DbSchemaInitializer implements CommandLineRunner {
 
             // 预置配送中心数据
             Long cnt = jdbcTemplate.queryForObject(
-                    "SELECT COUNT(*) FROM distribution_center WHERE dc_no = ?", Long.class, "BWCS");
+                    "SELECT COUNT(*) FROM distribution_center WHERE dc_no = ? AND tenant_id = 1",
+                    Long.class, "BWCS");
             if (cnt == null || cnt == 0) {
-                jdbcTemplate.update("INSERT INTO distribution_center (dc_no, dc_name) VALUES (?, ?)",
+                jdbcTemplate.update(
+                        "INSERT INTO distribution_center (dc_no, dc_name, tenant_id) VALUES (?, ?, 1)",
                         "BWCS", "广东横琴源麦商秋供应链管理有限公司");
             }
 
             // add by codebuddy 20260817: 门店商品表配送中心统一更新为 BWCS（幂等）
             Integer dcId = jdbcTemplate.queryForObject(
-                    "SELECT id FROM distribution_center WHERE dc_no = ?", Integer.class, "BWCS");
+                    "SELECT id FROM distribution_center WHERE dc_no = ? AND tenant_id = 1", Integer.class, "BWCS");
             if (dcId != null) {
+                // add by codebuddy 20260923: 必须限定默认租户，否则会污染其它租户的门店商品归属
                 int updated = jdbcTemplate.update(
-                        "UPDATE goods_shop SET delivery_center_id = ? WHERE delivery_center_id IS NULL OR delivery_center_id <> ?",
+                        "UPDATE goods_shop SET delivery_center_id = ? "
+                                + "WHERE tenant_id = 1 AND (delivery_center_id IS NULL OR delivery_center_id <> ?)",
                         dcId, dcId);
                 log.info("门店商品表配送中心统一更新为 BWCS(dcId={})，共更新 {} 条", dcId, updated);
             }
@@ -267,9 +274,12 @@ public class DbSchemaInitializer implements CommandLineRunner {
                     "CREATE TABLE IF NOT EXISTS sys_user (" +
                             " id INT AUTO_INCREMENT PRIMARY KEY," +
                             " username VARCHAR(64) NOT NULL UNIQUE," +
-                            " password VARCHAR(64) NOT NULL," +
+                            // add by codebuddy 20260923: PBKDF2 哈希约 84 字符，需 200 宽度
+                            " password VARCHAR(200) NOT NULL," +
                             " real_name VARCHAR(64)," +
-                            " status VARCHAR(1) NULL DEFAULT '1'" +
+                            " status VARCHAR(1) NULL DEFAULT '1'," +
+                            // add by codebuddy 20260923: 平台超级管理员标志
+                            " is_platform_admin VARCHAR(1) NOT NULL DEFAULT '0'" +
                             ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
             createTable("sys_user_role",
                     "CREATE TABLE IF NOT EXISTS sys_user_role (" +
@@ -290,16 +300,21 @@ public class DbSchemaInitializer implements CommandLineRunner {
 
             // add by codebuddy 20260819: 预置默认管理员 admin/123456（总部角色）
             Long adminCnt = jdbcTemplate.queryForObject(
-                    "SELECT COUNT(*) FROM sys_user WHERE username = ?", Long.class, "admin");
+                    "SELECT COUNT(*) FROM sys_user WHERE username = ? AND tenant_id = 1", Long.class, "admin");
             if (adminCnt == null || adminCnt == 0) {
+                // add by codebuddy 20260923: 默认租户的管理员同时作为平台超级管理员
                 jdbcTemplate.update(
-                        "INSERT INTO sys_user (username, password, real_name, status) VALUES (?, ?, ?, ?)",
+                        "INSERT INTO sys_user (username, password, real_name, status, tenant_id, is_platform_admin)"
+                                + " VALUES (?, ?, ?, ?, 1, '1')",
                         "admin", com.bwtst.common.Md5Util.md5("123456"), "系统管理员", "1");
                 Long adminId = jdbcTemplate.queryForObject(
-                        "SELECT id FROM sys_user WHERE username = ?", Long.class, "admin");
+                        "SELECT id FROM sys_user WHERE username = ? AND tenant_id = 1", Long.class, "admin");
                 jdbcTemplate.update(
-                        "INSERT INTO sys_user_role (user_id, role) VALUES (?, ?)", adminId, "hq");
+                        "INSERT INTO sys_user_role (user_id, role, tenant_id) VALUES (?, ?, 1)", adminId, "hq");
             }
+
+            // add by codebuddy 20260923: 多租户结构已在租户拦截器启用前由 TenantSchemaMigrator 完成，此处兜底确认
+            tenantSchemaMigrator.migrate();
 
             log.info("DbSchemaInitializer 建表/数据预置完成");
         } catch (Exception e) {

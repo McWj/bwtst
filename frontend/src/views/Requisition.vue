@@ -183,9 +183,6 @@ import { currentShopId, currentShopNo, shopOptions } from '../stores/globalShop'
 import { requisitionCreditDeduct, type RequisitionErpParams } from '../api/erp'
 import GoodsDetailTable, { type GoodsRow } from '../components/GoodsDetailTable.vue'
 
-// add by codebuddy 20260817: 要货单确认/提交调用的 ERP 地址（与查询额度共用）
-const ERP_URL = '/wtoptst/ws/r/awsp920'
-
 // add by codebuddy 20260817
 const loading = ref(false)
 const saving = ref(false)
@@ -414,7 +411,8 @@ async function callRequisitionDeduct(header: Requisition, detailList: Requisitio
         }
       })
   }
-  return requisitionCreditDeduct({ url: ERP_URL, shopNo, requisition })
+  // add by codebuddy 20260923: 改为走后端代理，地址与账套由后端按当前租户决定
+  return requisitionCreditDeduct({ shopNo, requisition })
 }
 
 // add by codebuddy 20260820: 确认要货单（体积/运费已在保存时由 ERP 计算并写入，此处不再调用 ERP）

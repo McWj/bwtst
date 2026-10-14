@@ -381,6 +381,32 @@ export interface SysUser {
   dcIds?: number[]           // 可访问配送中心
   defaultShopId?: number
   defaultDcId?: number
+  // add by codebuddy 20260923: 平台超级管理员标志（'1' 表示是）
+  isPlatformAdmin?: string
+}
+
+// add by codebuddy 20260923: SaaS 租户（企业）
+export interface SysTenant {
+  id?: number
+  tenantCode?: string
+  tenantName?: string
+  status?: string
+  erpUrl?: string
+  erpDigiKey?: string
+  erpProd?: string
+  erpAcct?: string
+  erpEntId?: string
+  createDatetime?: string
+  // 开通租户时的管理员账号与初始密码
+  adminUsername?: string
+  adminPassword?: string
+}
+
+// add by codebuddy 20260923: SaaS 登录返回体
+export interface LoginResult {
+  token: string
+  user: SysUser
+  expireMinutes: number
 }
 
 // add by codebuddy 20260818: 配送中心采购入库单主表

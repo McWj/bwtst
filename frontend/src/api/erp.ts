@@ -1,18 +1,8 @@
-// add by codebuddy 20260817: ERP 报文接口封装，统一构建 digi-header / digi-service / digi-key / digi-datakey
-import axios from 'axios'
-
-export interface ErpRequestOptions {
-  /** 请求地址，如 /wtoptst/ws/r/awsp920 */
-  url: string
-  /** 服务名称，如 credit.query */
-  service: string
-  /** 门店编码，作为 digi-datakey.CompanyId 与报文 customer */
-  shopNo: string
-  /** digi-body.std_data 内容，如 { parameter: { transfer: { customer } } } */
-  stdData?: Record<string, unknown>
-  /** 超时时间(ms)，默认 15000 */
-  timeout?: number
-}
+// add by codebuddy 20260817: ERP 接口封装
+// add by codebuddy 20260923: SaaS 改造——前端不再直连 ERP、也不再自行构建报文。
+// 浏览器端无法感知当前租户应使用哪个 ERP 账套（代理目标是服务器层静态配置），
+// 因此统一改走后端代理 /api/erp/*，由后端按当前租户的账套配置转发。
+import request from './request'
 
 // add by codebuddy 20260820: ERP 错误信息也可能放在 description 字段
 export interface ErpExecution {
@@ -25,50 +15,6 @@ export interface ErpStdData<T = Record<string, unknown>> {
   execution?: ErpExecution
   parameter?: T
   [key: string]: unknown
-}
-
-// 动态生成 17 位时间戳 yyyyMMddHHmmssSSS
-function formatTimestamp(d: Date) {
-  const p = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}${String(d.getMilliseconds()).padStart(3, '0')}`
-}
-
-// 构建 ERP 完整报文
-export function buildErpPayload(options: ErpRequestOptions) {
-  const { service, shopNo, stdData = {} } = options
-  return {
-    'digi-header': {
-      'digi-type': 'sync',
-      'digi-host': {
-        prod: 'POSSERVER1', ver: '1.0', ip: '192.168.0.1', id: 'postst', lang: 'zh_CN',
-        timestamp: formatTimestamp(new Date()), acct: 'tiptop'
-      },
-      'digi-service': {
-        prod: 'T100', name: service, srvver: '1.0', ip: '192.0.0.1', id: 'topprd'
-      },
-      'digi-key': '85d966d2f533fca68f83da455edabcbe',
-      'digi-datakey': { EntId: '10', CompanyId: shopNo }
-    },
-    'digi-body': {
-      std_data: stdData
-    }
-  }
-}
-
-// 发送 ERP 请求，成功(execution.code === '0')时返回 digi-body.std_data，失败抛异常
-export async function requestErp<T = Record<string, unknown>>(options: ErpRequestOptions): Promise<ErpStdData<T>> {
-  const resp = await axios.post(options.url, buildErpPayload(options), { timeout: options.timeout ?? 15000 })
-  const stdData = resp.data?.['digi-body']?.std_data as ErpStdData<T> | undefined
-  const execution = stdData?.execution
-  if (execution?.code === '0') {
-    if (!stdData) {
-      throw new Error(`ERP 接口响应为空(${options.service})`)
-    }
-    return stdData
-  }
-  // add by codebuddy 20260820: ERP 失败时优先展示 description 中的业务错误说明
-  const errMsg = execution?.description || execution?.message || `ERP 接口调用失败(${options.service})`
-  throw new Error(errMsg)
 }
 
 // add by codebuddy 20260817: ERP 要货单报文明细行
@@ -121,18 +67,23 @@ export interface RequisitionDeductResult {
   VolumeUnit?: string
 }
 
-// add by codebuddy 20260817: 要货单确认(callType=2,status=0)/提交(callType=0,status=2)，与查询额度共用 url
+/** 门店可用额度查询（后端代理 ERP credit.query） */
+export async function creditQuery(shopNo: string): Promise<ErpStdData<{ remaining_amount?: number }>> {
+  const res: any = await request.post('/erp/credit-query', { shopNo })
+  return res.data
+}
+
+/**
+ * 要货单确认(callType=2,status=0)/提交(callType=0,status=2)
+ * add by codebuddy 20260923: 由后端按当前租户的账套配置转发
+ */
 export async function requisitionCreditDeduct(options: {
-  url: string
   shopNo: string
   requisition: RequisitionErpParams
-  timeout?: number
 }): Promise<ErpStdData<RequisitionDeductResult>> {
-  return requestErp<RequisitionDeductResult>({
-    url: options.url,
-    service: 'requisition.credit.deduct',
+  const res: any = await request.post('/erp/requisition-credit-deduct', {
     shopNo: options.shopNo,
-    stdData: { parameter: { requisition: options.requisition } },
-    timeout: options.timeout
+    requisition: options.requisition
   })
+  return res.data
 }

@@ -19,7 +19,7 @@ public class SysUser {
     /** 登录账户 */
     private String username;
 
-    /** 密码（MD5 哈希） */
+    /** 密码哈希（PBKDF2 加盐存储，兼容历史 MD5） */
     private String password;
 
     /** 用户名（真实姓名） */
@@ -27,6 +27,10 @@ public class SysUser {
 
     /** 状态：1-启用 0-停用 */
     private String status;
+
+    // add by codebuddy 20260923
+    /** 是否平台超级管理员：1-是 0-否，可跨租户管理租户 */
+    private String isPlatformAdmin;
 
     /** 角色列表（非表字段，登录/详情返回用） */
     @TableField(exist = false)

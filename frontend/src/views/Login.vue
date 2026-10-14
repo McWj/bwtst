@@ -1,8 +1,13 @@
 <template>
   <div class="login-wrap">
     <el-card class="login-card">
-      <h2 class="login-title">门店配送管理系统</h2>
+      <h2 class="login-title">测试中台</h2>
       <el-form :model="form" label-position="top" @submit.prevent="doLogin">
+        <!-- add by codebuddy 20261014: 业务系统登录必须填写企业编码（平台管理端登录才允许留空） -->
+        <el-form-item label="企业编码" required>
+          <!-- add by codebuddy 20261014: 避免浏览器把企业编码当成用户名记住 -->
+          <el-input v-model="form.tenantCode" placeholder="请输入企业编码" autocomplete="off" />
+        </el-form-item>
         <el-form-item label="登录账户" required>
           <el-input v-model="form.username" placeholder="请输入登录账户" autofocus />
         </el-form-item>
@@ -20,17 +25,22 @@ import { ref, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { authApi } from '../api'
-import { currentUser, setUser, defaultView } from '../stores/auth'
+import { currentUser, setUser, setToken, defaultView } from '../stores/auth'
 import { currentShopId } from '../stores/globalShop'
 import { currentView, currentDeliveryCenterId } from '../stores/globalDc'
 import type { SysUser } from '../types'
 
 const router = useRouter()
 
-const form = reactive({ username: '', password: '' })
+const form = reactive({ username: '', password: '', tenantCode: '' })
 const loading = ref(false)
 
 async function doLogin() {
+  // add by codebuddy 20261014: 业务系统登录企业编码必填
+  if (!form.tenantCode) {
+    ElMessage.warning('请输入企业编码')
+    return
+  }
   if (!form.username || !form.password) {
     ElMessage.warning('请输入账户和密码')
     return
@@ -38,7 +48,9 @@ async function doLogin() {
   loading.value = true
   try {
     const res: any = await authApi.login(form)
-    const u: SysUser = res.data
+    // add by codebuddy 20260923: 先保存访问令牌，后续请求依赖它完成认证与租户识别
+    setToken(res.data.token)
+    const u: SysUser = res.data.user
     setUser(u)
     // 进入默认视角
     const v = defaultView()
@@ -55,6 +67,8 @@ async function doLogin() {
       if (dcId) currentDeliveryCenterId.value = dcId
     }
     ElMessage.success('登录成功')
+    // add by codebuddy 20261014: 业务登录页只进业务系统。
+    // 平台管理端完全独立，需从 /admin/login 单独登录，两端会话互不影响。
     router.replace('/')
   } catch (e: any) {
     ElMessage.error(e?.response?.data?.message || '登录失败')

@@ -92,4 +92,24 @@ public class SysConfigService {
             sysConfigMapper.updateById(cfg);
         }
     }
+
+    // add by codebuddy 20260923: 为新开通的租户预置默认配置（在当前租户上下文内写入）
+    public void initDefaultConfigs() {
+        insertIfMissing(KEY_UPLOAD_INTERVAL_MINUTES, String.valueOf(DEFAULT_INTERVAL_MINUTES),
+                "要货单ERP上传定时任务间隔（分钟）");
+        insertIfMissing(KEY_UPLOAD_ENABLED, "false",
+                "要货单ERP上传定时任务开关（true-启用/false-停用）");
+    }
+
+    private void insertIfMissing(String key, String value, String remark) {
+        SysConfig exist = sysConfigMapper.selectOne(new LambdaQueryWrapper<SysConfig>()
+                .eq(SysConfig::getConfigKey, key));
+        if (exist == null) {
+            SysConfig cfg = new SysConfig();
+            cfg.setConfigKey(key);
+            cfg.setConfigValue(value);
+            cfg.setRemark(remark);
+            sysConfigMapper.insert(cfg);
+        }
+    }
 }

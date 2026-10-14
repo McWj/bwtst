@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import { currentUser } from '../stores/auth'
+import { currentUser, currentToken, logoutUser, isTokenExpired } from '../stores/auth'
+import { adminToken, adminUser, adminLogout } from '../stores/adminAuth'
 
 // 角色约束：hq-总部 dc-配送中心 shop-门店，不设置表示所有已登录用户可见
 // add by codebuddy 20260817
@@ -39,18 +40,50 @@ const router = createRouter({
         // add by codebuddy 20260819: 用户管理（总部）
         { path: '/user', name: 'User', component: () => import('../views/User.vue'), meta: { title: '用户管理', roles: ['hq'] } }
       ]
+    },
+    // add by codebuddy 20260923: 平台管理端——完全独立入口，业务系统内不出现任何入口
+    { path: '/admin/login', name: 'AdminLogin', component: () => import('../views/admin/AdminLogin.vue'), meta: { public: true } },
+    {
+      path: '/admin',
+      component: () => import('../layout/AdminLayout.vue'),
+      redirect: '/admin/tenant',
+      children: [
+        { path: '/admin/tenant', name: 'AdminTenant', component: () => import('../views/admin/Tenant.vue'), meta: { title: '租户管理' } }
+      ]
     }
   ]
 })
 
 // add by codebuddy 20260819: 路由守卫——未登录跳登录页；按角色限制菜单访问
 router.beforeEach((to, from, next) => {
+  // add by codebuddy 20261014: 进入任何页面前先清理已过期的令牌，
+  // 避免带着过期登录态进入业务页面后，页面并发拉数据集中触发 401 报错
+  if (currentToken.value && isTokenExpired(currentToken.value)) {
+    logoutUser()
+  }
+  if (adminToken.value && isTokenExpired(adminToken.value)) {
+    adminLogout()
+  }
+  // add by codebuddy 20260923: 平台管理端独立守卫——仅平台超级管理员可进入，否则回平台登录页
+  if (to.path.startsWith('/admin')) {
+    if (to.meta?.public) {
+      next()
+      return
+    }
+    if (!adminToken.value || !adminUser.value || adminUser.value.isPlatformAdmin !== '1') {
+      next({ name: 'AdminLogin' })
+      return
+    }
+    next()
+    return
+  }
   const roles = to.meta?.roles as string[] | undefined
   if (to.meta?.public) {
     next()
     return
   }
-  if (!currentUser.value) {
+  // add by codebuddy 20260923: 未登录或无令牌一律回登录页
+  if (!currentUser.value || !currentToken.value) {
     next({ name: 'Login' })
     return
   }

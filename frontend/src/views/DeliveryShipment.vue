@@ -107,22 +107,32 @@
 
     <el-divider content-position="left">发货明细（同一项次可多批次，项序依次为1、2…）</el-divider>
     <el-table :data="details" border size="small">
-      <!-- add by codebuddy 20260817: 项次改为可编辑，支持多批次同一项次 -->
+      <!-- add by codebuddy 20260909: 编辑已保存单据时项次/项序/商品直接展示文本，不显示控件外观 -->
       <el-table-column label="项次" width="80">
         <template #default="{ row }">
-          <el-input-number v-model="row.seq" :min="1" size="small" controls-position="right" style="width: 100%" />
+          <span v-if="!form.id">
+            <el-input-number v-model="row.seq" :min="1" size="small" controls-position="right" style="width: 100%" />
+          </span>
+          <span v-else>{{ row.seq }}</span>
         </template>
       </el-table-column>
       <el-table-column label="项序" width="80">
         <template #default="{ row }">
-          <el-input-number v-model="row.orderSeq" :min="1" size="small" controls-position="right" style="width: 100%" />
+          <span v-if="!form.id">
+            <el-input-number v-model="row.orderSeq" :min="1" size="small" controls-position="right" style="width: 100%" />
+          </span>
+          <span v-else>{{ row.orderSeq }}</span>
         </template>
       </el-table-column>
       <el-table-column label="商品" min-width="240">
         <template #default="{ row }">
-          <el-select v-model="row.itemId" filterable placeholder="选择商品" style="width: 100%" @change="onItemChange(row)">
-            <el-option v-for="g in goodsOptions" :key="g.id" :label="`${g.itemNo}(${g.itemName})`" :value="g.id" />
-          </el-select>
+          <!-- add by codebuddy 20260909: 新增时可选择商品；编辑已保存单据直接展示商品文本 -->
+          <span v-if="!form.id">
+            <el-select v-model="row.itemId" filterable placeholder="选择商品" style="width: 100%" @change="onItemChange(row)">
+              <el-option v-for="g in goodsOptions" :key="g.id" :label="`${g.itemNo}(${g.itemName})`" :value="g.id" />
+            </el-select>
+          </span>
+          <span v-else>{{ row.itemNo }}({{ row.itemName }})</span>
         </template>
       </el-table-column>
       <el-table-column label="发货数量" width="130">
@@ -135,14 +145,18 @@
           <el-input v-model="row.lotNo" size="small" placeholder="批号" />
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="80">
-        <template #default="{ $index }">
-          <el-button link type="danger" @click="details.splice($index, 1)">删除</el-button>
+      <el-table-column label="操作" width="130">
+        <template #default="{ row, $index }">
+          <!-- add by codebuddy 20260909: 加批次=同一项次新增一行批次；删除保留该商品至少一条批次 -->
+          <el-button link type="primary" size="small" @click="addBatch(row)">加批次</el-button>
+          <el-button link type="danger" size="small" @click="removeDetail(row, $index)">删除</el-button>
         </template>
       </el-table-column>
     </el-table>
-    <div style="margin-top: 8px">
-      <el-button size="small" type="primary" plain @click="addDetail">添加明细</el-button>
+    <div style="margin-top: 8px; display: flex; align-items: center; gap: 10px">
+      <!-- add by codebuddy 20260909: 已保存单据禁止新增商品，仅可对各商品加批次 -->
+      <el-button v-if="!form.id" size="small" type="primary" plain @click="addDetail">添加明细</el-button>
+      <span v-else class="lock-tip">已保存单据的商品清单已锁定，仅可在各商品行【加批次】增加发货批次</span>
     </div>
 
     <template #footer>
@@ -285,11 +299,36 @@ function reset() {
   load()
 }
 
+// add by codebuddy 20260909: 新增商品行使用新的项次(seq=最大项次+1)，避免与已有商品共用项次
 function addDetail() {
-  // add by codebuddy 20260817: 新明细默认项次=最大项次，项序=最大项序+1（支持多批次）
-  const maxSeq = details.value.reduce((m, d) => Math.max(m, d.seq ?? 1), 1)
-  const maxOrderSeq = details.value.reduce((m, d) => Math.max(m, d.orderSeq ?? 0), 0)
-  details.value.push({ seq: maxSeq, orderSeq: maxOrderSeq + 1, itemId: undefined, qty: 0, lotNo: '' })
+  const maxSeq = details.value.reduce((m, d) => Math.max(m, d.seq ?? 0), 0)
+  details.value.push({ seq: maxSeq + 1, orderSeq: 1, itemId: undefined, qty: 0, lotNo: '' })
+}
+
+// add by codebuddy 20260909: 在当前商品项次行之后插入同一项次、项序+1 的新批次
+function addBatch(row: DeliveryShipmentDetail) {
+  const sameSeq = details.value.filter((d) => d.seq === row.seq)
+  const maxOrderSeq = sameSeq.reduce((m, d) => Math.max(m, d.orderSeq ?? 0), 0)
+  const idx = details.value.indexOf(row)
+  details.value.splice(idx + 1, 0, {
+    seq: row.seq,
+    orderSeq: maxOrderSeq + 1,
+    itemId: row.itemId,
+    itemNo: row.itemNo,
+    itemName: row.itemName,
+    qty: 0,
+    lotNo: ''
+  })
+}
+
+// add by codebuddy 20260909: 删除单条批次；若该商品只剩一条批次则禁止删除，保证商品不丢失
+function removeDetail(row: DeliveryShipmentDetail, index: number) {
+  const sameSeq = details.value.filter((d) => d.seq === row.seq)
+  if (sameSeq.length <= 1) {
+    ElMessage.warning('该商品至少保留一个批次，不能删除')
+    return
+  }
+  details.value.splice(index, 1)
 }
 
 function onItemChange(row: DeliveryShipmentDetail) {
@@ -338,6 +377,11 @@ async function submit() {
   }
   if (details.value.some((d) => !d.itemId)) {
     ElMessage.warning('请选择明细中的商品')
+    return
+  }
+  // add by codebuddy 20260909: 每个批次的发货数量必须大于 0
+  if (details.value.some((d) => !((d.qty ?? 0) > 0))) {
+    ElMessage.warning('每条批次的发货数量必须大于 0')
     return
   }
   saving.value = true
@@ -432,5 +476,9 @@ onMounted(() => {
 .pager {
   margin-top: 14px;
   justify-content: flex-end;
+}
+.lock-tip {
+  font-size: 13px;
+  color: #909399;
 }
 </style>

@@ -3,7 +3,7 @@
     <el-aside width="220px" class="aside">
       <div class="logo">
         <el-icon class="logo-icon"><Box /></el-icon>
-        <span>要货测试工作台</span>
+        <span>测试中台</span>
       </div>
       <!-- add by codebuddy 20260817: 菜单按视角切换 -->
       <!-- add by codebuddy 20260818: 基础资料仅在总部视角(hq)可见；门店/配送中心视角仅显示各自业务单据 -->
@@ -197,7 +197,7 @@ import Dashboard from '../views/Dashboard.vue'
 import { currentShopId, shopOptions } from '../stores/globalShop'
 import { currentView, currentDeliveryCenterId, deliveryCenterOptions } from '../stores/globalDc'
 import { distributionCenterApi, shopApi } from '../api'
-import { requestErp } from '../api/erp'
+import { creditQuery } from '../api/erp'
 import { currentUser, hasRole, defaultView, logoutUser } from '../stores/auth'
 import { Folder, Document, Box, DataAnalysis, OfficeBuilding, ArrowDown, Search, HomeFilled, SwitchButton, User } from '@element-plus/icons-vue'
 
@@ -290,6 +290,10 @@ function applyOrg(view: 'hq' | 'shop' | 'dc', shopId?: number, dcId?: number) {
 function onUserCommand(command: string) {
   if (command === 'logout') {
     logoutUser()
+    // add by codebuddy 20260923: 重置组织视角，避免切换账号后残留上一个账号的数据范围
+    currentView.value = 'hq'
+    currentDeliveryCenterId.value = undefined
+    currentShopId.value = undefined
     router.replace({ name: 'Login' })
   }
 }
@@ -525,12 +529,8 @@ async function queryCredit() {
     return
   }
   try {
-    const stdData = await requestErp<{ remaining_amount?: number }>({
-      url: '/wtoptst/ws/r/awsp920',
-      service: 'credit.query',
-      shopNo: shop.shopNo,
-      stdData: { parameter: { transfer: { customer: shop.shopNo } } }
-    })
+    // add by codebuddy 20260923: 改为走后端代理，账套地址由后端按当前租户决定
+    const stdData = await creditQuery(shop.shopNo)
     const amt = stdData?.parameter?.remaining_amount
     creditText.value = amt !== undefined && amt !== null
       ? `可用额度：${Number(amt).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`

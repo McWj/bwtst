@@ -1,0 +1,50 @@
+# add by codebuddy 20260824: bwtst 一体化部署（MySQL + 后端 + PC 前端）
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: bwtst-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpwd123}
+      MYSQL_DATABASE: bwtst
+      MYSQL_USER: wjdev
+      MYSQL_PASSWORD: wjdev
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./mysql-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${MYSQL_ROOT_PASSWORD:-rootpwd123}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: ./backend
+    container_name: bwtst-backend
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      DB_HOST: mysql
+      DB_PORT: "3306"
+      DB_NAME: bwtst
+      DB_USER: wjdev
+      DB_PASSWORD: wjdev
+    ports:
+      - "8081:8081"
+
+  frontend:
+    build: ./frontend
+    container_name: bwtst-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "80:80"
+    # 如需 HTTPS/域名，可在此加 labels 配合 traefik/caddy，或自行改 nginx.conf
+
+volumes:
+  mysql-data:
